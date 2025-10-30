@@ -120,7 +120,13 @@ class OrderViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def my_orders(self, request):
         """Get current user's orders"""
-        orders = Order.objects.filter(user=request.user).order_by('-order_date')
+        orders = Order.objects.filter(user=request.user)
+
+        status = request.query_params.get('status')
+        if status:
+            orders = orders.filter(status=status)
+
+        orders = orders.order_by('-order_date')
         serializer = self.get_serializer(orders, many=True)
         return Response(serializer.data)
     
