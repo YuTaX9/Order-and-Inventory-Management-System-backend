@@ -1,12 +1,14 @@
 from rest_framework import generics, viewsets, filters, status, permissions
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import IsAdminUser
+from django.db.models import Sum, Count, Q
 from django.contrib.auth.models import User
-from .serializers import RegisterSerializer, UserSerializer
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import Category, Product, Order, OrderItem
-from .serializers import CategorySerializer, ProductSerializer, OrderSerializer, OrderCreateSerializer, OrderItemSerializer
+from .serializers import RegisterSerializer, UserSerializer, CategorySerializer, ProductSerializer, OrderSerializer, OrderCreateSerializer, OrderItemSerializer
 from .permissions import IsOwnerOrAdmin
 
 class RegisterView(generics.CreateAPIView):
@@ -191,3 +193,55 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(order)
         return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def admin_stats(request):
+    """Get dashboard statistics for admin"""
+    
+    # Total products
+    total_products = Product.objects.filter(is_active=True).count()
+    
+    # Low stock products
+    low_stock_count = Product.objects.filter(
+        stock_quantity__lt=10, 
+        stock_quantity__gt=0,
+        is_active=True
+    ).count()
+    
+    # Out of stock products
+    out_of_stock_count = Product.objects.filter(
+        stock_quantity=0,
+        is_active=True
+    ).count()
+    
+    # Total orders
+    total_orders = Order.objects.count()
+    
+    # Orders by status
+    orders_by_status = {
+        'pending': Order.objects.filter(status='pending').count(),
+        'processing': Order.objects.filter(status='processing').count(),
+        'shipped': Order.objects.filter(status='shipped').count(),
+        'delivered': Order.objects.filter(status='delivered').count(),
+        'cancelled': Order.objects.filter(status='cancelled').count(),
+    }
+    
+    # Total revenue (from delivered orders)
+    total_revenue = Order.objects.filter(
+        status='delivered'
+    ).aggregate(total=Sum('total_amount'))['total'] or 0
+    
+    # Recent orders (last 10)
+    recent_orders = Order.objects.all().order_by('-order_date')[:10]
+    recent_orders_data = OrderSerializer(recent_orders, many=True).data
+    
+    return Response({
+        'total_products': total_products,
+        'low_stock_count': low_stock_count,
+        'out_of_stock_count': out_of_stock_count,
+        'total_orders': total_orders,
+        'orders_by_status': orders_by_status,
+        'total_revenue': float(total_revenue),
+        'recent_orders': recent_orders_data
+    })
