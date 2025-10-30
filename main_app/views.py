@@ -5,8 +5,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.contrib.auth.models import User
 from .serializers import RegisterSerializer, UserSerializer
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import Category, Product
-from .serializers import CategorySerializer, ProductSerializer
+from .models import Category, Product, Order, OrderItem
+from .serializers import CategorySerializer, ProductSerializer, OrderSerializer, OrderCreateSerializer, OrderItemSerializer
 from .permissions import IsOwnerOrAdmin
 
 class RegisterView(generics.CreateAPIView):
@@ -91,3 +91,97 @@ class ProductViewSet(viewsets.ModelViewSet):
             return Response(serializer.data)
         except ValueError:
             return Response({'error': 'Invalid stock quantity'}, status=status.HTTP_400_BAD_REQUEST)
+
+class OrderViewSet(viewsets.ModelViewSet):
+    serializer_class = OrderSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_staff:
+            # Admin sees all orders
+            queryset = Order.objects.all()
+        else:
+            # Regular users see only their orders
+            queryset = Order.objects.filter(user=user)
+        
+        # Filter by status
+        status = self.request.query_params.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+        
+        return queryset.order_by('-order_date')
+    
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return OrderCreateSerializer
+        return OrderSerializer
+    
+    @action(detail=False, methods=['get'])
+    def my_orders(self, request):
+        """Get current user's orders"""
+        orders = Order.objects.filter(user=request.user).order_by('-order_date')
+        serializer = self.get_serializer(orders, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        """Cancel an order and restore stock"""
+        order = self.get_object()
+        
+        # Check if user owns the order or is admin
+        if order.user != request.user and not request.user.is_staff:
+            return Response(
+                {'error': 'You do not have permission to cancel this order'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if not order.can_be_cancelled:
+            return Response(
+                {'error': 'This order cannot be cancelled'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        for item in order.order_items.all():
+            product = item.product
+            product.stock_quantity += item.quantity
+            product.save()
+        
+        # Update order status
+        order.status = 'cancelled'
+        order.save()
+        
+        serializer = self.get_serializer(order)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['patch'], permission_classes=[permissions.IsAdminUser])
+    def update_status(self, request, pk=None):
+        """Update order status (Admin only)"""
+        order = self.get_object()
+        new_status = request.data.get('status')
+        
+        if not new_status:
+            return Response(
+                {'error': 'Status is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        valid_statuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled']
+        if new_status not in valid_statuses:
+            return Response(
+                {'error': f'Invalid status. Must be one of: {", ".join(valid_statuses)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Cannot change from delivered or cancelled
+        if order.status in ['delivered', 'cancelled']:
+            return Response(
+                {'error': 'Cannot change status of delivered or cancelled orders'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        order.status = new_status
+        order.save()
+
+        serializer = self.get_serializer(order)
+        return Response(serializer.data)
