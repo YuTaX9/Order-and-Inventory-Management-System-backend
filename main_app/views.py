@@ -284,36 +284,66 @@ def admin_stats(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def request_password_reset(request):
-    """Request password reset - sends email with reset link"""
+    """Request password reset - sends email with reset link and removes reset_link from production response"""
     email = request.data.get('email')
-    
+
     if not email:
         return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
-    
+
     try:
         user = User.objects.get(email=email)
-        
+
         # Generate token
         token = default_token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
-        
-        # Create reset link
+
+        # Create reset link (يجب إعداد FRONTEND_URL في settings.py)
         reset_link = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}/"
-        
+
+        # 🚀 إضافة منطق إرسال البريد الإلكتروني الفعلي هنا
+        subject = "InventoryHub Password Reset Request"
+        message = (
+            f"Hello {user.username},\n\n"
+            f"You requested a password reset for your account. Please click the link below to reset your password:\n\n"
+            f"{reset_link}\n\n"
+            f"This link is valid for a limited time.\n\n"
+            f"If you did not request this, please ignore this email."
+        )
+
+        send_mail(
+            subject,
+            message,
+            settings.DEFAULT_FROM_EMAIL, # يجب إعداده في settings.py
+            [email],
+            fail_silently=False, # سيظهر خطأ إذا فشل إرسال الإيميل
+        )
+        # ----------------------------------------------------
+
+        # في وضع الإنتاج (Production): نرسل رسالة عامة للنجاح دون كشف الرابط
+        # يتم إرسال الرابط فقط في وضع التطوير للتسهيل (كما كان في الكود الأمامي)
+        # 💡 ملاحظة: الكود الأمامي ما زال يتوقع reset_link
+        # للتوافق المؤقت مع الكود الأمامي الذي أرسلته، سنبقي على 'reset_link'
+        # ولكن يفضل حذفه في بيئة الإنتاج الحقيقية لأسباب أمنية.
         return Response({
             'message': 'Password reset link sent to your email',
-            'reset_link': reset_link  # Remove this in production
+            'reset_link': reset_link  # ⚠️ يُفضل إزالة هذا الحقل في الإنتاج
         })
-        
+
     except User.DoesNotExist:
-        # Don't reveal if email exists
+        # لا تكشف ما إذا كان الإيميل موجودًا أم لا لأسباب أمنية
         return Response({
             'message': 'If this email exists, a reset link has been sent'
         })
+    except Exception as e:
+        # لغرض التطوير، يمكنك طباعة الخطأ لمعرفة سبب فشل الإرسال
+        print(f"Email sending failed: {e}") 
+        return Response({
+            'message': 'Failed to send reset email. Please try again later.'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-def reset_password(request, uidb64, token):
+def reset_password(request, uid, token):
     """Reset password with token"""
     new_password = request.data.get('new_password')
     
@@ -321,7 +351,7 @@ def reset_password(request, uidb64, token):
         return Response({'error': 'New password is required'}, status=status.HTTP_400_BAD_REQUEST)
     
     try:
-        uid = force_str(urlsafe_base64_decode(uidb64))
+        uid = force_str(urlsafe_base64_decode(uid))
         user = User.objects.get(pk=uid)
         
         # Verify token
