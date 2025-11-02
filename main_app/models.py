@@ -74,8 +74,40 @@ class Product(models.Model):
         return self.stock_quantity < 10 and self.stock_quantity > 0
 
 
+class ShippingZone(models.Model):
+    """Shipping zones with different rates"""
+    name = models.CharField(max_length=100)
+    country = models.CharField(max_length=100)
+    base_rate = models.DecimalField(max_digits=10, decimal_places=2)
+    per_kg_rate = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    free_shipping_threshold = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2, 
+        null=True, 
+        blank=True,
+        help_text="Order total for free shipping"
+    )
+    
+    class Meta:
+        ordering = ['name']
+    
+    def __str__(self):
+        return f"{self.name} - {self.country}"
+
 class Order(models.Model):
     """Customer orders"""
+
+    payment_status = models.CharField(
+        max_length=20,
+        choices=[
+            ('pending', 'Pending'),
+            ('paid', 'Paid'),
+            ('failed', 'Failed'),
+            ('refunded', 'Refunded')
+        ],
+        default='pending'
+    )
+    payment_intent_id = models.CharField(max_length=255, blank=True, null=True)
     STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('processing', 'Processing'),
@@ -104,6 +136,43 @@ class Order(models.Model):
     notes = models.TextField(blank=True, null=True)
     order_date = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    shipping_zone = models.ForeignKey(
+        'ShippingZone',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+    shipping_cost = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00')
+    )
+    
+    def calculate_shipping(self):
+        """Calculate shipping cost based on zone and order total"""
+        if not self.shipping_zone:
+            return Decimal('0.00')
+
+        if (self.shipping_zone.free_shipping_threshold and 
+            self.total_amount >= self.shipping_zone.free_shipping_threshold):
+            return Decimal('0.00')
+
+        total_weight = sum(
+            item.product.weight * item.quantity 
+            for item in self.order_items.all()
+            if hasattr(item.product, 'weight') and item.product.weight
+        )
+        
+        shipping_cost = self.shipping_zone.base_rate
+        if total_weight > 0:
+            shipping_cost += total_weight * self.shipping_zone.per_kg_rate
+        
+        return shipping_cost
+    
+    def get_final_total(self):
+        """Get total including shipping"""
+        return self.total_amount + self.shipping_cost
 
     class Meta:
         ordering = ['-order_date']

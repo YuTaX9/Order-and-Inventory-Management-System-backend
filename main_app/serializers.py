@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
-from .models import Category, Product, Order, OrderItem
+from .models import Category, Product, Order, OrderItem, ShippingZone
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
@@ -21,6 +21,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         user = User.objects.create_user(**validated_data)
         return user
 
+
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
@@ -35,6 +36,7 @@ class CategorySerializer(serializers.ModelSerializer):
     
     def get_products_count(self, obj):
         return obj.products.filter(is_active=True).count()
+
 
 class ProductSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
@@ -55,7 +57,12 @@ class ProductSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user
         return super().create(validated_data)
-    
+
+class ShippingZoneSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ShippingZone
+        fields = ['id', 'name', 'country', 'base_rate', 'per_kg_rate', 'free_shipping_threshold']
+
 class OrderItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)
     product_image = serializers.CharField(source='product.image_url', read_only=True)
@@ -67,6 +74,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'quantity', 'unit_price', 'subtotal', 'created_at'
         ]
         read_only_fields = ['subtotal', 'created_at']
+
 
 class OrderSerializer(serializers.ModelSerializer):
     order_items = OrderItemSerializer(many=True, read_only=True)
@@ -83,39 +91,43 @@ class OrderSerializer(serializers.ModelSerializer):
         read_only_fields = ['user', 'order_number', 'total_amount', 'order_date', 'updated_at']
 
 class OrderCreateSerializer(serializers.ModelSerializer):
-    order_items = serializers.ListField(
-        child=serializers.DictField(),
-        write_only=True
-    )
+    order_items = serializers.ListField(child=serializers.DictField(), write_only=True)
+    shipping_zone_id = serializers.IntegerField(write_only=True, required=False)
     
     class Meta:
         model = Order
-        fields = ['shipping_address', 'notes', 'order_items']
+        fields = [
+            'id', 'order_number', 'shipping_address', 'notes', 'order_items', 'shipping_zone_id'
+        ]
+        read_only_fields = ['id', 'order_number']
     
     def validate_order_items(self, value):
         if not value or len(value) == 0:
             raise serializers.ValidationError("Order must contain at least one item")
-        
         for item in value:
             if 'product_id' not in item or 'quantity' not in item:
-                raise serializers.ValidationError("Each item must have product_id and quantity")
-            
+                raise serializers.ValidationError("Each item must include product_id and quantity")
             if item['quantity'] < 1:
                 raise serializers.ValidationError("Quantity must be at least 1")
-        
         return value
     
     def create(self, validated_data):
         order_items_data = validated_data.pop('order_items')
+        shipping_zone_id = validated_data.pop('shipping_zone_id', None)
 
         order = Order.objects.create(
             user=self.context['request'].user,
             **validated_data
         )
 
+        if shipping_zone_id:
+            try:
+                order.shipping_zone = ShippingZone.objects.get(id=shipping_zone_id)
+            except ShippingZone.DoesNotExist:
+                pass
+
         for item_data in order_items_data:
             product = Product.objects.get(id=item_data['product_id'])
-
             if product.stock_quantity < item_data['quantity']:
                 order.delete()
                 raise serializers.ValidationError(
@@ -133,5 +145,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             product.save()
 
         order.calculate_total()
+        order.shipping_cost = order.calculate_shipping()
+        order.save()
 
         return order
