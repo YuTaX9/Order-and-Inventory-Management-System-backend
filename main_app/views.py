@@ -1,3 +1,4 @@
+from decimal import Decimal
 from rest_framework import generics, viewsets, filters, status, permissions
 from rest_framework.response import Response
 from rest_framework.decorators import action
