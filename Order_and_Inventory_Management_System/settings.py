@@ -154,3 +154,5 @@ SIMPLE_JWT = {
 }
 
 FRONTEND_URL = 'http://localhost:5173'
+DEFAULT_FROM_EMAIL = "noreply@yourdomain.com"
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"

@@ -300,19 +300,6 @@ def request_password_reset(request):
         # Create reset link
         reset_link = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}/"
         
-        # Send email (في الإنتاج استخدم Email service حقيقي)
-        # في التطوير يمكن طباعة الرابط في console
-        print(f"Password Reset Link: {reset_link}")
-        
-        # TODO: Send actual email
-        # send_mail(
-        #     'Password Reset Request',
-        #     f'Click this link to reset your password: {reset_link}',
-        #     settings.DEFAULT_FROM_EMAIL,
-        #     [email],
-        #     fail_silently=False,
-        # )
-        
         return Response({
             'message': 'Password reset link sent to your email',
             'reset_link': reset_link  # Remove this in production
@@ -349,6 +336,26 @@ def reset_password(request, uidb64, token):
         
     except (TypeError, ValueError, OverflowError, User.DoesNotExist):
         return Response({'error': 'Invalid reset link'}, status=status.HTTP_400_BAD_REQUEST)
+    
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_password(request):
+    """Change the authenticated user's password."""
+    old_password = request.data.get('old_password')
+    new_password = request.data.get('new_password')
+
+    if not all([old_password, new_password]):
+        return Response({'error': 'Both old_password and new_password are required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    user = request.user
+    
+    if not user.check_password(old_password):
+        return Response({'old_password': 'Wrong password.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    user.set_password(new_password)
+    user.save()
+    
+    return Response({'message': 'Password updated successfully'}, status=status.HTTP_200_OK)
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 

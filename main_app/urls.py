@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from .views import RegisterView, ProfileView, CategoryViewSet, ProductViewSet, OrderViewSet, admin_stats, request_password_reset, reset_password, calculate_shipping_preview, stripe_config, create_payment_intent, confirm_payment
+from .views import RegisterView, ProfileView, CategoryViewSet, ProductViewSet, OrderViewSet, admin_stats, request_password_reset, reset_password, calculate_shipping_preview, stripe_config, create_payment_intent, confirm_payment, change_password
 
 router = DefaultRouter()
 router.register(r'categories', CategoryViewSet, basename='category')
@@ -11,6 +11,7 @@ router.register(r'orders', OrderViewSet, basename='order')
 urlpatterns = [
     path('auth/register/', RegisterView.as_view(), name='register'),
     path('auth/login/', TokenObtainPairView.as_view(), name='login'),
+    path('auth/change-password/', change_password, name='change_password'),
     path('auth/password-reset/', request_password_reset, name='password_reset_request'),
     path('auth/password-reset/<uidb64>/<token>/', reset_password, name='password_reset'),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
