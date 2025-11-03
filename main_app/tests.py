@@ -731,3 +731,270 @@ class OrderAPITest(APITestCase):
         
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+# 6. API Tests - Shipping
+class ShippingAPITest(APITestCase):
+    """Tests for shipping endpoints"""
+    
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username='testuser',
+            password='testpass123'
+        )
+        self.zone = ShippingZone.objects.create(
+            name='Riyadh',
+            country='SA',
+            base_rate=Decimal('25.00'),
+            free_shipping_threshold=Decimal('500.00')
+        )
+    
+    def test_calculate_shipping_with_free_threshold(self):
+        """Test shipping calculation with free shipping threshold"""
+        self.client.force_authenticate(user=self.user)
+        url = reverse('calculate_shipping')
+        data = {
+            'shipping_zone_id': self.zone.id,
+            'cart_total': '600.00'
+        }
+        response = self.client.post(url, data)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['shipping_cost'], 0)
+        self.assertTrue(response.data['is_free'])
+    
+    def test_calculate_shipping_below_threshold(self):
+        """Test shipping calculation below free threshold"""
+        self.client.force_authenticate(user=self.user)
+        url = reverse('calculate_shipping')
+        data = {
+            'shipping_zone_id': self.zone.id,
+            'cart_total': '300.00'
+        }
+        response = self.client.post(url, data)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['shipping_cost'], 25.0)
+        self.assertFalse(response.data['is_free'])
+
+
+# 7. API Tests - Password Management
+class PasswordAPITest(APITestCase):
+    """Tests for password change and reset"""
+    
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@test.com',
+            password='oldpass123'
+        )
+    
+    def test_change_password_success(self):
+        """Test changing password with correct old password"""
+        self.client.force_authenticate(user=self.user)
+        url = reverse('change_password')
+        data = {
+            'old_password': 'oldpass123',
+            'new_password': 'newpass123'
+        }
+        response = self.client.post(url, data)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('newpass123'))
+    
+    def test_change_password_wrong_old(self):
+        """Test changing password with wrong old password"""
+        self.client.force_authenticate(user=self.user)
+        url = reverse('change_password')
+        data = {
+            'old_password': 'wrongpass',
+            'new_password': 'newpass123'
+        }
+        response = self.client.post(url, data)
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+    
+    @patch('main_app.views.send_mail')
+    def test_request_password_reset(self, mock_send_mail):
+        """Test requesting password reset"""
+        url = reverse('password_reset_request')
+        data = {'email': 'test@test.com'}
+        response = self.client.post(url, data)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(mock_send_mail.called)
+
+
+# 8. API Tests - Admin Stats
+class AdminStatsAPITest(APITestCase):
+    """Tests for admin statistics endpoint"""
+    
+    def setUp(self):
+        self.client = APIClient()
+        self.admin = User.objects.create_superuser(
+            username='admin',
+            email='admin@test.com',
+            password='admin123'
+        )
+        self.user = User.objects.create_user(
+            username='user',
+            password='user123'
+        )
+        
+        self.product1 = Product.objects.create(
+            user=self.user,
+            name='Product 1',
+            description='Test',
+            price=Decimal('100.00'),
+            stock_quantity=5,
+            sku='PROD001',
+            is_active=True
+        )
+        self.product2 = Product.objects.create(
+            user=self.user,
+            name='Product 2',
+            description='Test',
+            price=Decimal('200.00'),
+            stock_quantity=0,
+            sku='PROD002',
+            is_active=True
+        )
+        
+        self.order1 = Order.objects.create(
+            user=self.user,
+            shipping_address='Test Address',
+            status='pending',
+            total_amount=Decimal('500.00')
+        )
+        self.order2 = Order.objects.create(
+            user=self.user,
+            shipping_address='Test Address',
+            status='delivered',
+            total_amount=Decimal('1000.00')
+        )
+    
+    def test_admin_stats_as_admin(self):
+        """Test getting admin stats as admin user"""
+        self.client.force_authenticate(user=self.admin)
+        url = reverse('admin_stats')
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('total_products', response.data)
+        self.assertIn('low_stock_count', response.data)
+        self.assertIn('out_of_stock_count', response.data)
+        self.assertIn('total_orders', response.data)
+        self.assertIn('orders_by_status', response.data)
+        self.assertIn('total_revenue', response.data)
+        
+        self.assertEqual(response.data['total_products'], 2)
+        self.assertEqual(response.data['low_stock_count'], 1)
+        self.assertEqual(response.data['out_of_stock_count'], 1)
+        self.assertEqual(response.data['total_orders'], 2)
+    
+    def test_admin_stats_as_regular_user(self):
+        """Test that regular users cannot access admin stats"""
+        self.client.force_authenticate(user=self.user)
+        url = reverse('admin_stats')
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+    
+    def test_admin_stats_unauthenticated(self):
+        """Test that unauthenticated users cannot access admin stats"""
+        url = reverse('admin_stats')
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+# 9. API Tests - Payment (Stripe)
+class PaymentAPITest(APITestCase):
+    """Tests for Stripe payment endpoints"""
+    
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username='testuser',
+            password='testpass123'
+        )
+        self.order = Order.objects.create(
+            user=self.user,
+            shipping_address='Test Address',
+            total_amount=Decimal('500.00')
+        )
+    
+    @patch('stripe.PaymentIntent.create')
+    def test_create_payment_intent(self, mock_stripe):
+        """Test creating a payment intent"""
+        mock_stripe.return_value = MagicMock(
+            client_secret='test_secret',
+            id='pi_test123'
+        )
+        
+        self.client.force_authenticate(user=self.user)
+        url = reverse('create_payment_intent')
+        data = {
+            'amount': '500.00',
+            'order_id': self.order.id
+        }
+        response = self.client.post(url, data)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('clientSecret', response.data)
+        self.assertIn('paymentIntentId', response.data)
+        self.assertTrue(mock_stripe.called)
+    
+    def test_create_payment_intent_invalid_amount(self):
+        """Test creating payment intent with invalid amount"""
+        self.client.force_authenticate(user=self.user)
+        url = reverse('create_payment_intent')
+        data = {
+            'amount': '0',
+            'order_id': self.order.id
+        }
+        response = self.client.post(url, data)
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+    
+    @patch('stripe.PaymentIntent.retrieve')
+    def test_confirm_payment_success(self, mock_stripe):
+        """Test confirming a successful payment"""
+        mock_stripe.return_value = MagicMock(status='succeeded')
+        
+        self.client.force_authenticate(user=self.user)
+        url = reverse('confirm_payment')
+        data = {
+            'payment_intent_id': 'pi_test123',
+            'order_id': self.order.id
+        }
+        response = self.client.post(url, data)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.payment_status, 'paid')
+        self.assertEqual(self.order.payment_intent_id, 'pi_test123')
+    
+    @patch('stripe.PaymentIntent.retrieve')
+    def test_confirm_payment_failed(self, mock_stripe):
+        """Test confirming a failed payment"""
+        mock_stripe.return_value = MagicMock(status='failed')
+        
+        self.client.force_authenticate(user=self.user)
+        url = reverse('confirm_payment')
+        data = {
+            'payment_intent_id': 'pi_test123',
+            'order_id': self.order.id
+        }
+        response = self.client.post(url, data)
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+    
+    def test_stripe_config(self):
+        """Test getting Stripe public key"""
+        url = reverse('stripe_config')
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('publicKey', response.data)
