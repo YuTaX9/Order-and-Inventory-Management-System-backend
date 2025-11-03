@@ -15,7 +15,7 @@ import stripe
 from django.conf import settings
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import Category, Product, Order, ShippingZone, OrderItem
-from .serializers import RegisterSerializer, UserSerializer, CategorySerializer, ProductSerializer, OrderSerializer, OrderCreateSerializer, ShippingZoneSerializer, OrderItemSerializer
+from .serializers import RegisterSerializer, UserSerializer, CategorySerializer, ProductSerializer, OrderSerializer, OrderCreateSerializer, ShippingZoneSerializer, OrderItemSerializer, ProfileUpdateSerializer
 from .permissions import IsOwnerOrAdmin
 
 class RegisterView(generics.CreateAPIView):
@@ -25,10 +25,14 @@ class RegisterView(generics.CreateAPIView):
 
 class ProfileView(generics.RetrieveUpdateAPIView):
     permission_classes = (IsAuthenticated,)
-    serializer_class = UserSerializer
 
     def get_object(self):
         return self.request.user
+    
+    def get_serializer_class(self):
+        if self.request.method in ['PUT', 'PATCH']:
+            return ProfileUpdateSerializer 
+        return UserSerializer
 
 class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()

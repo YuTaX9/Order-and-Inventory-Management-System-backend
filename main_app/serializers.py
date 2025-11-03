@@ -149,3 +149,9 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         order.save()
 
         return order
+
+class ProfileUpdateSerializer(serializers.ModelSerializer):
+    """Serializer used for PATCH/PUT on profile endpoint"""
+    class Meta:
+        model = User
+        fields = ('first_name', 'last_name', 'email')
