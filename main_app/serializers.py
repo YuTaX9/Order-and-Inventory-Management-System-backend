@@ -1,3 +1,4 @@
+from decimal import Decimal
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
@@ -80,24 +81,28 @@ class OrderSerializer(serializers.ModelSerializer):
     order_items = OrderItemSerializer(many=True, read_only=True)
     user_username = serializers.CharField(source='user.username', read_only=True)
     can_be_cancelled = serializers.BooleanField(read_only=True)
+    shipping_cost = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True) 
+
     
     class Meta:
         model = Order
         fields = [
             'id', 'user', 'user_username', 'order_number',
             'total_amount', 'status', 'shipping_address', 'notes',
-            'order_date', 'updated_at', 'order_items', 'can_be_cancelled'
+            'order_date', 'updated_at', 'order_items', 'can_be_cancelled', 'shipping_cost'
         ]
-        read_only_fields = ['user', 'order_number', 'total_amount', 'order_date', 'updated_at']
+        read_only_fields = ['user', 'order_number', 'total_amount', 'order_date', 'updated_at', 'shipping_cost']
 
 class OrderCreateSerializer(serializers.ModelSerializer):
     order_items = serializers.ListField(child=serializers.DictField(), write_only=True)
     shipping_zone_id = serializers.IntegerField(write_only=True, required=False)
+    shipping_cost = serializers.DecimalField(max_digits=10, decimal_places=2, write_only=True, required=False)
+    
     
     class Meta:
         model = Order
         fields = [
-            'id', 'order_number', 'shipping_address', 'notes', 'order_items', 'shipping_zone_id'
+            'id', 'order_number', 'shipping_address', 'notes', 'order_items', 'shipping_zone_id', 'shipping_cost'
         ]
         read_only_fields = ['id', 'order_number']
     
@@ -114,6 +119,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         order_items_data = validated_data.pop('order_items')
         shipping_zone_id = validated_data.pop('shipping_zone_id', None)
+        shipping_cost_from_frontend = validated_data.pop('shipping_cost', Decimal('0')) 
 
         order = Order.objects.create(
             user=self.context['request'].user,
@@ -145,7 +151,11 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             product.save()
 
         order.calculate_total()
-        order.shipping_cost = order.calculate_shipping()
+
+        order.shipping_cost = shipping_cost_from_frontend
+
+        order.total_amount += order.shipping_cost
+
         order.save()
 
         return order
