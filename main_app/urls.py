@@ -1,12 +1,13 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from .views import RegisterView, ProfileView, CategoryViewSet, ProductViewSet, OrderViewSet, admin_stats, request_password_reset, reset_password, calculate_shipping_preview, stripe_config, create_payment_intent, confirm_payment, change_password
+from .views import RegisterView, ProfileView, CategoryViewSet, ProductViewSet, OrderViewSet, ShippingZoneViewSet, admin_stats, request_password_reset, reset_password, calculate_shipping_preview, stripe_config, create_payment_intent, confirm_payment, change_password
 
 router = DefaultRouter()
 router.register(r'categories', CategoryViewSet, basename='category')
 router.register(r'products', ProductViewSet, basename='product')
 router.register(r'orders', OrderViewSet, basename='order')
+router.register(r'shipping-zones', ShippingZoneViewSet, basename='shipping-zone')
 
 urlpatterns = [
     path('auth/register/', RegisterView.as_view(), name='register'),

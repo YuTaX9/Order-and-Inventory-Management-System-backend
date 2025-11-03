@@ -61,7 +61,7 @@ class ProductSerializer(serializers.ModelSerializer):
 class ShippingZoneSerializer(serializers.ModelSerializer):
     class Meta:
         model = ShippingZone
-        fields = ['id', 'name', 'country', 'base_rate', 'per_kg_rate', 'free_shipping_threshold']
+        fields = ['id', 'name', 'country', 'base_rate', 'free_shipping_threshold']
 
 class OrderItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)

@@ -79,7 +79,6 @@ class ShippingZone(models.Model):
     name = models.CharField(max_length=100)
     country = models.CharField(max_length=100)
     base_rate = models.DecimalField(max_digits=10, decimal_places=2)
-    per_kg_rate = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     free_shipping_threshold = models.DecimalField(
         max_digits=10, 
         decimal_places=2, 

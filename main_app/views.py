@@ -199,39 +199,56 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(order)
         return Response(serializer.data)
     
-class ShippingZoneViewSet(viewsets.ReadOnlyModelViewSet):
-    """Get available shipping zones"""
+class ShippingZoneViewSet(viewsets.ModelViewSet):
+    """Get/Manage available shipping zones (Admin only for management)"""
     queryset = ShippingZone.objects.all()
     serializer_class = ShippingZoneSerializer
-    permission_classes = [permissions.AllowAny]
+    
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [permissions.AllowAny()]
+
+        return [permissions.IsAdminUser()]
 
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def calculate_shipping_preview(request):
-    """Preview shipping cost before placing order"""
+    """Preview shipping cost before placing order (using base rate only)."""
     shipping_zone_id = request.data.get('shipping_zone_id')
-    cart_total = Decimal(str(request.data.get('cart_total', 0)))
+    cart_total = Decimal(str(request.data.get('cart_total', 0))) 
     
     if not shipping_zone_id:
-        return Response({'shipping_cost': 0})
+        return Response({'shipping_cost': 0, 'message': 'Select a shipping zone.'})
     
     try:
         zone = ShippingZone.objects.get(id=shipping_zone_id)
 
-        if zone.free_shipping_threshold and cart_total >= zone.free_shipping_threshold:
-            return Response({
-                'shipping_cost': 0,
-                'is_free': True,
-                'message': 'Free shipping!'
-            })
-        
+        shipping_cost = zone.base_rate 
+
+        free_shipping_threshold = zone.free_shipping_threshold
+        is_free_shipping = free_shipping_threshold is not None and cart_total >= free_shipping_threshold
+
+        if is_free_shipping:
+            final_cost = Decimal('0')
+            message = 'Free shipping!'
+        else:
+            final_cost = shipping_cost
+            message = f"Base cost: ${final_cost.quantize(Decimal('0.01'))}"
+
+        free_threshold_value = float(free_shipping_threshold) if free_shipping_threshold is not None else None
+
         return Response({
-            'shipping_cost': float(zone.base_rate),
-            'is_free': False
+            'shipping_cost': float(final_cost),
+            'is_free': final_cost == Decimal('0'),
+            'message': message,
+            'free_shipping_threshold': free_threshold_value, # 👈 التأكيد النهائي للإرسال
         })
         
     except ShippingZone.DoesNotExist:
-        return Response({'error': 'Invalid shipping zone'}, status=400)
+        return Response({'error': 'Invalid shipping zone'}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({'error': f'Calculation failed: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+
 
 @api_view(['GET'])
 @permission_classes([IsAdminUser])
@@ -304,7 +321,6 @@ def request_password_reset(request):
         # Create reset link (يجب إعداد FRONTEND_URL في settings.py)
         reset_link = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}/"
 
-        # 🚀 إضافة منطق إرسال البريد الإلكتروني الفعلي هنا
         subject = "InventoryHub Password Reset Request"
         message = (
             f"Hello {user.username},\n\n"
@@ -317,29 +333,21 @@ def request_password_reset(request):
         send_mail(
             subject,
             message,
-            settings.DEFAULT_FROM_EMAIL, # يجب إعداده في settings.py
+            settings.DEFAULT_FROM_EMAIL,
             [email],
-            fail_silently=False, # سيظهر خطأ إذا فشل إرسال الإيميل
+            fail_silently=False,
         )
-        # ----------------------------------------------------
 
-        # في وضع الإنتاج (Production): نرسل رسالة عامة للنجاح دون كشف الرابط
-        # يتم إرسال الرابط فقط في وضع التطوير للتسهيل (كما كان في الكود الأمامي)
-        # 💡 ملاحظة: الكود الأمامي ما زال يتوقع reset_link
-        # للتوافق المؤقت مع الكود الأمامي الذي أرسلته، سنبقي على 'reset_link'
-        # ولكن يفضل حذفه في بيئة الإنتاج الحقيقية لأسباب أمنية.
         return Response({
             'message': 'Password reset link sent to your email',
-            'reset_link': reset_link  # ⚠️ يُفضل إزالة هذا الحقل في الإنتاج
+            'reset_link': reset_link
         })
 
     except User.DoesNotExist:
-        # لا تكشف ما إذا كان الإيميل موجودًا أم لا لأسباب أمنية
         return Response({
             'message': 'If this email exists, a reset link has been sent'
         })
     except Exception as e:
-        # لغرض التطوير، يمكنك طباعة الخطأ لمعرفة سبب فشل الإرسال
         print(f"Email sending failed: {e}") 
         return Response({
             'message': 'Failed to send reset email. Please try again later.'
