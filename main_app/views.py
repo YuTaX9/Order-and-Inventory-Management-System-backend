@@ -241,7 +241,7 @@ def calculate_shipping_preview(request):
             'shipping_cost': float(final_cost),
             'is_free': final_cost == Decimal('0'),
             'message': message,
-            'free_shipping_threshold': free_threshold_value, # 👈 التأكيد النهائي للإرسال
+            'free_shipping_threshold': free_threshold_value,
         })
         
     except ShippingZone.DoesNotExist:
@@ -318,7 +318,6 @@ def request_password_reset(request):
         token = default_token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
 
-        # Create reset link (يجب إعداد FRONTEND_URL في settings.py)
         reset_link = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}/"
 
         subject = "InventoryHub Password Reset Request"

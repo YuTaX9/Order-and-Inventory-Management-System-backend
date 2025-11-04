@@ -152,7 +152,3 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7)
 }
-
-FRONTEND_URL = 'http://localhost:5173'
-DEFAULT_FROM_EMAIL = "noreply@InventoryHub.com"
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
