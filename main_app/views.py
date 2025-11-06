@@ -305,7 +305,7 @@ def admin_stats(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def request_password_reset(request):
-    """Request password reset - sends email with reset link and removes reset_link from production response"""
+    """Request password reset - returns reset link directly (no email sending)"""
     email = request.data.get('email')
 
     if not email:
@@ -318,38 +318,23 @@ def request_password_reset(request):
         token = default_token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
 
+        # Generate reset link
         reset_link = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}/"
 
-        subject = "InventoryHub Password Reset Request"
-        message = (
-            f"Hello {user.username},\n\n"
-            f"You requested a password reset for your account. Please click the link below to reset your password:\n\n"
-            f"{reset_link}\n\n"
-            f"This link is valid for a limited time.\n\n"
-            f"If you did not request this, please ignore this email."
-        )
-
-        send_mail(
-            subject,
-            message,
-            settings.DEFAULT_FROM_EMAIL,
-            [email],
-            fail_silently=False,
-        )
-
         return Response({
-            'message': 'Password reset link sent to your email',
+            'message': 'Password reset link generated successfully',
             'reset_link': reset_link
-        })
+        }, status=status.HTTP_200_OK)
 
     except User.DoesNotExist:
         return Response({
-            'message': 'If this email exists, a reset link has been sent'
-        })
+            'message': 'If this email exists, a reset link has been generated'
+        }, status=status.HTTP_200_OK)
+
     except Exception as e:
-        print(f"Email sending failed: {e}") 
+        print(f"Password reset link generation failed: {e}") 
         return Response({
-            'message': 'Failed to send reset email. Please try again later.'
+            'message': 'Failed to generate reset link. Please try again later.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
