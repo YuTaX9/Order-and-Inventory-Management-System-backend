@@ -97,15 +97,15 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     order_items = serializers.ListField(child=serializers.DictField(), write_only=True)
     shipping_zone_id = serializers.IntegerField(write_only=True, required=False)
     shipping_cost = serializers.DecimalField(max_digits=10, decimal_places=2, write_only=True, required=False)
-    
-    
+
     class Meta:
         model = Order
         fields = [
-            'id', 'order_number', 'shipping_address', 'notes', 'order_items', 'shipping_zone_id', 'shipping_cost'
+            'id', 'order_number', 'shipping_address', 'notes', 
+            'order_items', 'shipping_zone_id', 'shipping_cost'
         ]
         read_only_fields = ['id', 'order_number']
-    
+
     def validate_order_items(self, value):
         if not value or len(value) == 0:
             raise serializers.ValidationError("Order must contain at least one item")
@@ -115,16 +115,17 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             if item['quantity'] < 1:
                 raise serializers.ValidationError("Quantity must be at least 1")
         return value
-    
+
     def create(self, validated_data):
         order_items_data = validated_data.pop('order_items')
         shipping_zone_id = validated_data.pop('shipping_zone_id', None)
-        shipping_cost_from_frontend = validated_data.pop('shipping_cost', Decimal('0')) 
+        shipping_cost_from_frontend = validated_data.pop('shipping_cost', Decimal('0'))
 
         order = Order.objects.create(
-            user=self.context['request'].user,
-            **validated_data
-        )
+        user=self.context['request'].user,
+        status='pending',
+        **validated_data
+    )
 
         if shipping_zone_id:
             try:
@@ -151,11 +152,8 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             product.save()
 
         order.calculate_total()
-
         order.shipping_cost = shipping_cost_from_frontend
-
         order.total_amount += order.shipping_cost
-
         order.save()
 
         return order

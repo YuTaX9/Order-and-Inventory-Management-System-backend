@@ -128,10 +128,31 @@ class OrderViewSet(viewsets.ModelViewSet):
         return OrderSerializer
     
     @action(detail=False, methods=['get'])
-    def my_orders(self, request):
-        """Get current user's orders"""
-        orders = Order.objects.filter(user=request.user)
+    def get_or_create_cart(self, request):
 
+        user = request.user
+        
+        try:
+            cart = Order.objects.get(
+                user=user, 
+                status='pending', 
+                payment_status='pending'
+            )
+        except Order.DoesNotExist:
+            cart = Order.objects.create(
+                user=user, 
+                status='pending',
+                payment_status='pending',
+                shipping_address="Temporary Cart Address"
+            )
+        
+        serializer = self.get_serializer(cart)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'])
+    def my_orders(self, request):
+        orders = Order.objects.filter(user=request.user).exclude(status='pending')
+        
         status = request.query_params.get('status')
         if status:
             orders = orders.filter(status=status)
